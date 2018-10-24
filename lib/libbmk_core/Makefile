@@ -5,7 +5,7 @@ SRCS=		init.c bmk_string.c jsmn.c memalloc.c pgalloc.c sched.c
 SRCS+=		subr_prf.c strtoul.c
 
 # kernel-level source code
-CFLAGS+=	-fno-stack-protector
+CFLAGS+=	-fstack-protector-strong -mstack-protector-guard=global
 
 CPPFLAGS+=	-I${.CURDIR}/../../include
 
