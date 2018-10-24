@@ -232,9 +232,7 @@ probeprereqs ()
 		# probe location of Xen headers
 		found=false
 		for loc in ${XEN_HEADERS:-} /usr/pkg/include/xen /usr/include/xen; do
-			if printf '#include <stdint.h>\n#include <xen.h>\n'\
-			    | ${CC} -I${loc} -x c - -c -o /dev/null \
-			    >/dev/null 2>&1 ; then
+			if [ -f "${loc}/xen.h" ]; then
 				found=true
 				break
 			fi
