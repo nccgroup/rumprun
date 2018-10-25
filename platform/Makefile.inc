@@ -3,7 +3,7 @@ $(error need to specify $$PLATFORM!)
 endif
 
 CPPFLAGS+=	-Iinclude -I../../include -I${RROBJ}/include -nostdinc
-CFLAGS+=	${BUILDRUMP_TOOL_CFLAGS}
+CFLAGS+=	${BUILDRUMP_TOOL_CFLAGS} -fstack-protector-strong -mstack-protector-guard=global
 
 TARGETS=	rumpkernlibs
 # compiler_rt is strictly speaking necessary only in KERNONLY=true,

@@ -9,6 +9,8 @@ RUMPTOP= ${TOPRUMP}
 
 IFBASE=		-DVIRTIF_BASE=xenif
 
+CFLAGS+= -fstack-protector-strong -mstack-protector-guard=global
+CPPFLAGS+= -fstack-protector-strong -mstack-protector-guard=global
 CPPFLAGS+=	-I${RUMPTOP}/librump/rumpkern -I${RUMPTOP}/librump/rumpnet
 CPPFLAGS+=	-I${.CURDIR}
 CPPFLAGS+=	${IFBASE}

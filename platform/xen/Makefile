@@ -28,7 +28,8 @@ CPPFLAGS+= -no-integrated-cpp
 LDFLAGS-$(call cc-option,-no-pie) += -no-pie
 LDFLAGS += $(LDFLAGS-y)
 
-CFLAGS += -fno-builtin
+CFLAGS += -fno-builtin -fstack-protector-strong -mstack-protector-guard=global
+CPPFLAGS += -fno-builtin -fstack-protector-strong -mstack-protector-guard=global
 
 rump-src-y += rumphyper_bio.c
 rump-src-y += init.c

@@ -10,6 +10,8 @@ SRCS+=	busdev.c
 
 RUMPTOP= ${TOPRUMP}
 
+CFLAGS+= -fstack-protector-strong -mstack-protector-guard=global
+CPPFLAGS+= -fstack-protector-strong -mstack-protector-guard=global
 CPPFLAGS+=	-I${RUMPTOP}/librump/rumpkern -I${RUMPTOP}/librump
 CPPFLAGS+=	-I${RUMPTOP}/librump/rumpvfs
 CPPFLAGS+=	-I${.CURDIR}/../xen/include
