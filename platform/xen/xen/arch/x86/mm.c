@@ -44,6 +44,8 @@
 #include <bmk-core/pgalloc.h>
 #include <bmk-core/string.h>
 
+#define _PAGE_NX (1ULL << 63)
+
 #ifdef MM_DEBUG
 #define DEBUG(_f, _a...) \
     minios_printk("MINI_OS(file=mm.c, line=%d) " _f "\n", __LINE__, ## _a)
@@ -109,8 +111,14 @@ static void new_pt_frame(unsigned long *pt_pfn, unsigned long prev_l_mfn,
 
     mmu_updates[0].ptr = (tab[l2_table_offset(pt_page)] & PAGE_MASK) + 
         sizeof(pgentry_t) * l1_table_offset(pt_page);
-    mmu_updates[0].val = (pgentry_t)pfn_to_mfn(*pt_pfn) << PAGE_SHIFT | 
-        (prot_e & ~_PAGE_RW);
+
+
+    mmu_updates[0].val = (pgentry_t)pfn_to_mfn(*pt_pfn) << PAGE_SHIFT; 
+#if defined(__x86_64__)
+    mmu_updates[0].val |= (prot_e | _PAGE_NX) & ~_PAGE_RW; // default to NX + ~RW
+#else
+    mmu_updates[0].val |= prot_e & ~_PAGE_RW; // default to ~RW
+#endif
     
     if ( (rc = HYPERVISOR_mmu_update(mmu_updates, 1, NULL, DOMID_SELF)) < 0 )
     {
@@ -233,7 +241,8 @@ static void build_pagetable(unsigned long *start_pfn, unsigned long *max_pfn)
  * Mark portion of the address space read only.
  */
 extern struct shared_info _minios_shared_info;
-static void set_readonly(void *text, void *etext)
+static void set_permissions(void *text, void *etext,
+                            int perm_write, int perm_execute)
 {
     unsigned long start_address =
         ((unsigned long) text + PAGE_SIZE - 1) & PAGE_MASK;
@@ -245,7 +254,8 @@ static void set_readonly(void *text, void *etext)
     int count = 0;
     int rc;
 
-    minios_printk("setting %p-%p readonly\n", text, etext);
+    minios_printk("setting %p-%p permissions: R%s%s\n",
+        text, etext, perm_write ? "W" : "", perm_execute ? "X" : "");
 
     while ( start_address + PAGE_SIZE <= end_address )
     {
@@ -273,7 +283,16 @@ static void set_readonly(void *text, void *etext)
         {
             mmu_updates[count].ptr = 
                 ((pgentry_t)mfn << PAGE_SHIFT) + sizeof(pgentry_t) * offset;
-            mmu_updates[count].val = tab[offset] & ~_PAGE_RW;
+
+            pgentry_t new_val = tab[offset];
+              
+            if (perm_write) new_val |= _PAGE_RW;
+            else            new_val &= ~_PAGE_RW;
+
+            if (perm_execute) new_val &= ~_PAGE_NX;
+            else              new_val |= _PAGE_NX;
+
+            mmu_updates[count].val = new_val;
             count++;
         }
         else
@@ -884,7 +903,12 @@ void arch_init_mm(unsigned long* start_pfn_p, unsigned long* max_pfn_p)
 
     build_pagetable(&start_pfn, &max_pfn);
     clear_bootstrap();
-    set_readonly(&_text, &_erodata);
+
+    //              start   end              write  execute
+    set_permissions(&_text, &_etext,         0,     1);
+    set_permissions(&_etext, &_erodata,      0,     0);
+    set_permissions(&_erodata, &_edata,      1,     0);
+    set_permissions(&_edata, &_minios_stack, 1,     0);
 
     /* get the number of physical pages the system has. Used to check for
      * system memory. */

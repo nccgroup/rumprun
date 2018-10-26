@@ -71,6 +71,7 @@ void init_mm(void)
     minios_printk("MM: Init\n");
 
     arch_init_mm(&start_pfn, &max_pfn);
+
     /*
      * now we can initialise the page allocator
      */
