@@ -45,6 +45,8 @@
 #include <bmk-core/string.h>
 
 #define _PAGE_NX (1ULL << 63)
+#define CPUID_NX (1ULL << 20)
+#define CPUID_MODE_EXTENDED_FEATURES 0x80000001
 
 #ifdef MM_DEBUG
 #define DEBUG(_f, _a...) \
@@ -53,10 +55,40 @@
 #define DEBUG(_f, _a...)    ((void)0)
 #endif
 
+static pgentry_t PAGE_NX = 0;
 unsigned long *_minios_phys_to_machine_mapping;
 unsigned long _minios_mfn_zero;
 extern char _minios_stack[];
 extern void page_walk(unsigned long va);
+
+static inline void native_cpuid(unsigned *eax, unsigned *ebx,
+                                unsigned *ecx, unsigned *edx)
+{
+  /* ecx is often an input as well as an output. */
+  asm volatile("cpuid"
+      : "=a" (*eax),
+        "=b" (*ebx),
+        "=c" (*ecx),
+        "=d" (*edx)
+      : "a" (*eax),
+        "c" (*ecx));
+}
+
+static int cpu_supports_nx(void) {
+  unsigned eax, ebx, ecx, edx;
+
+  eax = 0; ecx = 0;
+  native_cpuid(&eax, &ebx, &ecx, &edx);
+
+  const unsigned max_eax = eax;
+
+  if (max_eax < CPUID_MODE_EXTENDED_FEATURES)
+    return 1;
+
+  eax = CPUID_MODE_EXTENDED_FEATURES; ecx = 0;
+  native_cpuid(&eax, &ebx, &ecx, &edx);
+  return (edx & CPUID_NX);
+}
 
 /*
  * Make pt_pfn a new 'level' page table frame and hook it into the page
@@ -114,11 +146,7 @@ static void new_pt_frame(unsigned long *pt_pfn, unsigned long prev_l_mfn,
 
 
     mmu_updates[0].val = (pgentry_t)pfn_to_mfn(*pt_pfn) << PAGE_SHIFT; 
-#if defined(__x86_64__)
-    mmu_updates[0].val |= (prot_e | _PAGE_NX) & ~_PAGE_RW; // default to NX + ~RW
-#else
-    mmu_updates[0].val |= prot_e & ~_PAGE_RW; // default to ~RW
-#endif
+    mmu_updates[0].val |= (prot_e | PAGE_NX) & ~_PAGE_RW; // default to NX + ~RW
     
     if ( (rc = HYPERVISOR_mmu_update(mmu_updates, 1, NULL, DOMID_SELF)) < 0 )
     {
@@ -289,8 +317,8 @@ static void set_permissions(void *text, void *etext,
             if (perm_write) new_val |= _PAGE_RW;
             else            new_val &= ~_PAGE_RW;
 
-            if (perm_execute) new_val &= ~_PAGE_NX;
-            else              new_val |= _PAGE_NX;
+            if (perm_execute) new_val &= ~PAGE_NX;
+            else              new_val |= PAGE_NX;
 
             mmu_updates[count].val = new_val;
             count++;
@@ -875,6 +903,12 @@ void arch_init_p2m(unsigned long max_pfn)
 
 void arch_init_mm(unsigned long* start_pfn_p, unsigned long* max_pfn_p)
 {
+    PAGE_NX = (cpu_supports_nx() ? _PAGE_NX : 0);
+    if (PAGE_NX)
+      minios_printk("  NX bit supported\n");
+    else
+      minios_printk("  WARNING: NX bit not supported\n");
+
     unsigned long start_pfn, max_pfn;
 
     minios_printk("      _text: %p(VA)\n", &_text);
