@@ -62,6 +62,8 @@
  *	and then frees a lot of memory (will require changes to the allocator)
  */
 
+#include <stdint.h>
+
 enum bmk_memwho {
 	BMK_MEMWHO_WIREDBMK,
 	BMK_MEMWHO_RUMPKERN,
@@ -69,6 +71,7 @@ enum bmk_memwho {
 };
 
 void	bmk_memalloc_init(void);
+void	bmk_memalloc_heap_chk_guard_init(uintptr_t value);
 
 void *  bmk_memalloc(unsigned long, unsigned long, enum bmk_memwho);
 void *  bmk_memcalloc(unsigned long, unsigned long, enum bmk_memwho);

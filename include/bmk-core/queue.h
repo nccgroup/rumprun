@@ -267,6 +267,16 @@ struct {								\
 	(elm)->field.le_prev = &(head)->lh_first;			\
 } while (/*CONSTCOND*/0)
 
+#define LIST_REMOVE_CHECK(elm, field) 0
+
+/*
+#define LIST_REMOVE_CHECK(elm, field) \
+  (((elm)->field.le_next && \
+        (*((elm)->field.le_next->field.le_prev) != (elm))) || \
+     ((elm)->field.le_prev && \
+        ((*(elm)->field.le_prev)->field.le_next != (elm))))
+        */
+
 #define	LIST_REMOVE(elm, field) do {					\
 	QUEUEDEBUG_LIST_OP((elm), field)				\
 	if ((elm)->field.le_next != NULL)				\

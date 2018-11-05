@@ -115,7 +115,6 @@ bmk_platform_splx(unsigned long x)
  */
 void _minios_start_kernel(start_info_t *si)
 {
-
     bmk_printf_init(minios_putc, NULL);
     bmk_core_init(STACK_SIZE_PAGE_ORDER);
 

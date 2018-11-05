@@ -26,7 +26,10 @@
 #ifndef _BMK_CORE_PGALLOC_H_
 #define _BMK_CORE_PGALLOC_H_
 
+#include <stdint.h>
+
 void		bmk_pgalloc_loadmem(unsigned long, unsigned long);
+void		bmk_pgalloc_heap_chk_guard_init(uintptr_t value);
 
 void *		bmk_pgalloc(int);
 void *		bmk_pgalloc_align(int, unsigned long);
