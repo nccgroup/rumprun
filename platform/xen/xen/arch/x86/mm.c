@@ -59,6 +59,7 @@ static pgentry_t PAGE_NX = 0;
 unsigned long *_minios_phys_to_machine_mapping;
 unsigned long _minios_mfn_zero;
 extern char _minios_stack[];
+extern char *_minios_stack_end;
 extern void page_walk(unsigned long va);
 
 static inline void native_cpuid(unsigned *eax, unsigned *ebx,
@@ -135,6 +136,11 @@ static void new_pt_frame(unsigned long *pt_pfn, unsigned long prev_l_mfn,
         break;
     }
 
+    // PTEs default to NX + RW
+    prot_e = (prot_e | PAGE_NX) & ~_PAGE_RW;
+    // Directories default to NX
+    prot_t |= PAGE_NX;
+
     /* Make PFN a page table page */
 #if defined(__x86_64__)
     tab = pte_to_virt(tab[l4_table_offset(pt_page)]);
@@ -146,7 +152,7 @@ static void new_pt_frame(unsigned long *pt_pfn, unsigned long prev_l_mfn,
 
 
     mmu_updates[0].val = (pgentry_t)pfn_to_mfn(*pt_pfn) << PAGE_SHIFT; 
-    mmu_updates[0].val |= (prot_e | PAGE_NX) & ~_PAGE_RW; // default to NX + ~RW
+    mmu_updates[0].val |= prot_e;
     
     if ( (rc = HYPERVISOR_mmu_update(mmu_updates, 1, NULL, DOMID_SELF)) < 0 )
     {
@@ -269,12 +275,12 @@ static void build_pagetable(unsigned long *start_pfn, unsigned long *max_pfn)
  * Mark portion of the address space read only.
  */
 extern struct shared_info _minios_shared_info;
-static void set_permissions(void *text, void *etext,
+static void set_permissions(void *begin, void *end,
                             int perm_write, int perm_execute)
 {
     unsigned long start_address =
-        ((unsigned long) text + PAGE_SIZE - 1) & PAGE_MASK;
-    unsigned long end_address = (unsigned long) etext;
+        ((unsigned long) begin + PAGE_SIZE - 1) & PAGE_MASK;
+    unsigned long end_address = (unsigned long) end;
     static mmu_update_t mmu_updates[L1_PAGETABLE_ENTRIES + 1];
     pgentry_t *tab = (pgentry_t *)start_info.pt_base, page;
     unsigned long mfn = pfn_to_mfn(virt_to_pfn(start_info.pt_base));
@@ -283,7 +289,7 @@ static void set_permissions(void *text, void *etext,
     int rc;
 
     minios_printk("setting %p-%p permissions: R%s%s\n",
-        text, etext, perm_write ? "W" : "", perm_execute ? "X" : "");
+        begin, end, perm_write ? "W" : "", perm_execute ? "X" : "");
 
     while ( start_address + PAGE_SIZE <= end_address )
     {
@@ -938,11 +944,13 @@ void arch_init_mm(unsigned long* start_pfn_p, unsigned long* max_pfn_p)
     build_pagetable(&start_pfn, &max_pfn);
     clear_bootstrap();
 
-    //              start   end              write  execute
-    set_permissions(&_text, &_etext,         0,     1);
-    set_permissions(&_etext, &_erodata,      0,     0);
-    set_permissions(&_erodata, &_edata,      1,     0);
-    set_permissions(&_edata, &_minios_stack, 1,     0);
+    //              start               end                   write  execute
+    set_permissions(&_text,             &_etext-1,            0,     1);
+    set_permissions(&_etext,            &_erodata-1,          0,     0);
+    set_permissions(&_erodata,          &_edata,              1,     0);
+    set_permissions(&_edata,            _minios_stack-1,      1,     0);
+    set_permissions(_minios_stack,      _minios_stack_end-1,  1,     0);
+    set_permissions(_minios_stack_end,  &_end,                1,     0);
 
     /* get the number of physical pages the system has. Used to check for
      * system memory. */
