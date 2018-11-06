@@ -69,8 +69,7 @@
 
 #include <bmk-pcpu/pcpu.h>
 
-#include <stddef.h>
-#include <stdint.h>
+#include "stack_chk_guard.h"
 
 #ifndef BMK_PGALLOC_DEBUG
 #define DPRINTF(x)
@@ -178,21 +177,16 @@ map_free(void *virt, unsigned long nr_pages)
  */
 
 struct chunk {
-	uintptr_t magic;
+	unsigned long magic;
 	int level;
 
 	LIST_ENTRY(chunk) entries;
 };
 
-#define MAX_EARLY_ALLOC_CHUNKS 1024
-static size_t early_alloc_chunks_index = 0;
-static struct chunk *early_alloc_chunks[MAX_EARLY_ALLOC_CHUNKS];
-static uintptr_t heap_page_chk_guard = 1;
-
 static int
 chunklevel(struct chunk *ch)
 {
-	bmk_assert(ch->magic == heap_page_chk_guard);
+	bmk_assert(ch->magic == __stack_chk_guard.v.heap_page_chk_guard);
 	return ch->level;
 }
 
@@ -207,36 +201,13 @@ chunklevel(struct chunk *ch)
 #define FREELIST_LEVELS (8*(sizeof(void*))-BMK_PCPU_PAGE_SHIFT)
 static LIST_HEAD(, chunk) freelist[FREELIST_LEVELS];
 
-void
-bmk_pgalloc_heap_chk_guard_init(uintptr_t value)
-{
-  if (heap_page_chk_guard)
-    return;
-
-  heap_page_chk_guard = value;
-
-  // Update canaries
-  for (size_t i = 0; i < early_alloc_chunks_index; ++i) {
-    if (early_alloc_chunks[i]) {
-      early_alloc_chunks[i]->magic = heap_page_chk_guard;
-    }
-  }
-}
-
 static void
 freechunk_link(void *addr, int order)
 {
 	struct chunk *ch = addr;
 
 	ch->level = order;
-	ch->magic = heap_page_chk_guard;
-
-  if (!heap_page_chk_guard) {
-    if (early_alloc_chunks_index == MAX_EARLY_ALLOC_CHUNKS) {
-      bmk_platform_halt("early alloc chunk space exceeded");
-    }
-    early_alloc_chunks[early_alloc_chunks_index++] = ch;
-  }
+	ch->magic = __stack_chk_guard.v.heap_page_chk_guard;
 
 	LIST_INSERT_HEAD(&freelist[order], ch, entries);
 }
@@ -266,7 +237,7 @@ sanity_check(void)
 	for (x = 0; x < FREELIST_LEVELS; x++) {
 		LIST_FOREACH(head, &freelist[x], entries) {
 			bmk_assert(!allocated_in_map(head));
-			bmk_assert(head->magic == heap_page_chk_guard);
+			bmk_assert(head->magic == __stack_chk_guard.v.heap_page_chk_guard);
 		}
 	}
 }
@@ -424,16 +395,8 @@ bmk_pgalloc_align(int order, unsigned long align)
   }
   LIST_REMOVE(alloc_ch, entries);
 
-	bmk_assert(alloc_ch->magic == heap_page_chk_guard);
-	alloc_ch->magic = ~heap_page_chk_guard;
-
-  if (!heap_page_chk_guard) {
-    for (size_t i = 0; i < early_alloc_chunks_index; ++i) {
-      if (early_alloc_chunks[i] == alloc_ch) {
-        early_alloc_chunks[i] = 0;
-      }
-    }
-  }
+	bmk_assert(alloc_ch->magic == __stack_chk_guard.v.heap_page_chk_guard);
+	alloc_ch->magic = ~__stack_chk_guard.v.heap_page_chk_guard;
 
 	/*
 	 * TODO: figure out if we can cheaply carve the block without
@@ -500,7 +463,7 @@ bmk_pgfree(void *pointer, int order)
 			    || allocated_in_map(to_merge_ch)
 			    || chunklevel(to_merge_ch) != order)
 				break;
-			freed_ch->magic = ~heap_page_chk_guard;
+			freed_ch->magic = ~__stack_chk_guard.v.heap_page_chk_guard;
 
 			/* merge with predecessor, point freed chuck there */
 			freed_ch = to_merge_ch;
@@ -510,12 +473,12 @@ bmk_pgfree(void *pointer, int order)
 			    || allocated_in_map(to_merge_ch)
 			    || chunklevel(to_merge_ch) != order)
 				break;
-			freed_ch->magic = ~heap_page_chk_guard;
+			freed_ch->magic = ~__stack_chk_guard.v.heap_page_chk_guard;
 
 			/* merge with successor, freed chuck already correct */
 		}
 
-		to_merge_ch->magic = ~heap_page_chk_guard;
+		to_merge_ch->magic = ~__stack_chk_guard.v.heap_page_chk_guard;
 
     if (LIST_REMOVE_CHECK(to_merge_ch, entries)) {
       bmk_platform_halt("Linked list validation failed!");

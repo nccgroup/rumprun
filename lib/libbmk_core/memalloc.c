@@ -52,8 +52,7 @@
 
 #include <bmk-pcpu/pcpu.h>
 
-#include <stddef.h>
-#include <stdint.h>
+#include "stack_chk_guard.h"
 
 /*
  * Header goes right before the allocated space and holds
@@ -62,18 +61,13 @@
  * allocator than malloc.
  */
 struct memalloc_hdr {
-	uintptr_t mh_magic;	/* magic number --- MUST BE LOCATED AT THE TOP */
+	uint64_t mh_magic;	/* magic number --- MUST BE LOCATED AT THE TOP */
 	uint32_t	mh_alignpad;	/* padding for alignment */
 	uint8_t		mh_index;	/* bucket # */
 	uint8_t		mh_who;		/* who allocated */
 };
 // TODO: is this OK?
 //bmk_ctassert(sizeof(struct memalloc_hdr) == 8);
-
-#define MAX_EARLY_ALLOC_HDRS 1024
-static size_t early_alloc_hdrs_index = 0;
-static struct memalloc_hdr *early_alloc_hdrs[MAX_EARLY_ALLOC_HDRS];
-static uintptr_t heap_chunk_chk_guard = 0;
 
 struct memalloc_freeblk {
 	LIST_ENTRY(memalloc_freeblk) entries;
@@ -125,24 +119,6 @@ morecore(int bucket)
 		LIST_INSERT_HEAD(&freebuckets[bucket], frb, entries);
 	}
 	return rv;
-}
-
-void
-bmk_memalloc_heap_chk_guard_init(uintptr_t value)
-{
-  if (heap_chunk_chk_guard)
-    return;
-
-  heap_chunk_chk_guard = value;
-
-  // Update canaries
-  for (size_t i = 0; i < early_alloc_hdrs_index; ++i) {
-    if (early_alloc_hdrs[i]) {
-      early_alloc_hdrs[i]->mh_magic = heap_chunk_chk_guard;
-    }
-  }
-
-  bmk_pgalloc_heap_chk_guard_init(value);
 }
 
 void
@@ -235,19 +211,10 @@ bmk_memalloc(unsigned long nbytes, unsigned long align, enum bmk_memwho who)
 #endif
 
 	hdr = ((struct memalloc_hdr *)rv)-1;
-	hdr->mh_magic = heap_chunk_chk_guard;
+	hdr->mh_magic = __stack_chk_guard.v.heap_chunk_chk_guard;
 	hdr->mh_index = bucket;
 	hdr->mh_alignpad = alignpad;
 	hdr->mh_who = who;
-
-  // Record headers of chunks created before guard init so we can update the
-  // guard values later
-  if (!heap_chunk_chk_guard) {
-    if (early_alloc_hdrs_index == MAX_EARLY_ALLOC_HDRS) {
-      bmk_platform_halt("early alloc header space exceeded");
-    }
-    early_alloc_hdrs[early_alloc_hdrs_index++] = hdr;
-  }
 
   return rv;
 }
@@ -290,7 +257,7 @@ bmk_memfree(void *cp, enum bmk_memwho who)
   	if (cp == NULL)
   		return;
 	hdr = ((struct memalloc_hdr *)cp)-1;
-	if (hdr->mh_magic != heap_chunk_chk_guard) {
+	if (hdr->mh_magic != __stack_chk_guard.v.heap_chunk_chk_guard) {
 #ifdef MEMALLOC_TESTING
 		bmk_assert(0);
 #else
@@ -322,14 +289,6 @@ bmk_memfree(void *cp, enum bmk_memwho who)
 		}
 	}
 #endif
-
-  if (!heap_chunk_chk_guard) {
-    for (size_t i = 0; i < early_alloc_hdrs_index; ++i) {
-      if (early_alloc_hdrs[i] == hdr) {
-        early_alloc_hdrs[i] = 0;
-      }
-    }
-  }
 
 	if (index >= LOCALBUCKETS) {
 		bmk_pgfree(origp, (index+MINSHIFT) - BMK_PCPU_PAGE_SHIFT);
@@ -463,7 +422,7 @@ testalloc(unsigned long min, unsigned long max)
 	v = bmk_memalloc(size1, 1<<align, BMK_MEMWHO_USER);
 	if (!v)
 		return NULL;
-	bmk_assert(((uintptr_t)v & (align-1)) == 0);
+	bmk_assert(((uint64_t)v & (align-1)) == 0);
 	bmk_memset(v, UNMAGIC, size1);
 
 	size2 = myrand() % ((max-min)+1) + min;

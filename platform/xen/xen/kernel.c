@@ -110,11 +110,15 @@ bmk_platform_splx(unsigned long x)
 	local_irq_restore(x);
 }
 
+extern void __guard_setup(void);
+
 /*
  * INITIAL C ENTRY POINT.
  */
 void _minios_start_kernel(start_info_t *si)
 {
+    __guard_setup();
+
     bmk_printf_init(minios_putc, NULL);
     bmk_core_init(STACK_SIZE_PAGE_ORDER);
 

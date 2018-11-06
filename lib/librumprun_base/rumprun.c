@@ -78,28 +78,6 @@ __weak_alias(rump_init_server,rumprun_enosys);
 
 int rumprun_cold = 1;
 
-static void heap_chk_guard_init(void) {
-  uintptr_t heap_chk_guard;
-	const int mib[2] = { CTL_KERN, KERN_ARND };
-	size_t len = sizeof(heap_chk_guard);
-
-  unsigned char* p = (unsigned char*)&heap_chk_guard;
-	if (sysctl(mib, (u_int)__arraycount(mib), &heap_chk_guard, &len,
-	    NULL, 0) == -1 || len != sizeof(heap_chk_guard)) {
-		// If sysctl was unsuccessful, use the "terminator canary".
-    p[0] = 0;
-    p[1] = 0;
-    p[2] = '\n';
-    p[3] = 255;
-	}
-  
-  // Put a null byte in the canary at the second byte.
-  // See https://www.openwall.com/lists/kernel-hardening/2017/09/19/8
-  p[1] = 0;
-
-  bmk_memalloc_heap_chk_guard_init(heap_chk_guard);
-}
-
 void
 rumprun_boot(char *cmdline)
 {
@@ -131,7 +109,6 @@ rumprun_boot(char *cmdline)
 	 */
 	rumprun_lwp_init();
 	_netbsd_userlevel_init();
-  heap_chk_guard_init();
 
 	/* print tmpfs result only after we bootstrapped userspace */
 	if (tmpfserrno == 0) {

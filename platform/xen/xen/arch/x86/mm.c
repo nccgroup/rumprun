@@ -61,6 +61,7 @@ unsigned long _minios_mfn_zero;
 extern char _minios_stack[];
 extern char *_minios_stack_end;
 extern void page_walk(unsigned long va);
+extern unsigned long __stack_chk_guard;
 
 static inline void native_cpuid(unsigned *eax, unsigned *ebx,
                                 unsigned *ecx, unsigned *edx)
@@ -335,8 +336,9 @@ static void set_permissions(void *begin, void *end,
         start_address += PAGE_SIZE;
 
         if ( count == L1_PAGETABLE_ENTRIES || 
-             start_address + PAGE_SIZE > end_address )
+             start_address + PAGE_SIZE >= end_address )
         {
+            minios_printk("count: %d\n", count);
             rc = HYPERVISOR_mmu_update(mmu_updates, count, NULL, DOMID_SELF);
             if ( rc < 0 )
             {
@@ -940,17 +942,20 @@ void arch_init_mm(unsigned long* start_pfn_p, unsigned long* max_pfn_p)
 
     minios_printk("  start_pfn: %lx\n", start_pfn);
     minios_printk("    max_pfn: %lx\n", max_pfn);
+    
+    minios_printk("    scg: %p\n", &__stack_chk_guard);
 
     build_pagetable(&start_pfn, &max_pfn);
     clear_bootstrap();
 
     //              start               end                   write  execute
-    set_permissions(&_text,             &_etext-1,            0,     1);
-    set_permissions(&_etext,            &_erodata-1,          0,     0);
+    set_permissions(&_text,             &_etext,              0,     1);
+    set_permissions(&_etext,            &_erodata,            0,     0);
     set_permissions(&_erodata,          &_edata,              1,     0);
-    set_permissions(&_edata,            _minios_stack-1,      1,     0);
-    set_permissions(_minios_stack,      _minios_stack_end-1,  1,     0);
+    set_permissions(&_edata,            _minios_stack,        1,     0);
+    set_permissions(_minios_stack,      _minios_stack_end,    1,     0);
     set_permissions(_minios_stack_end,  &_end,                1,     0);
+    set_permissions(&__stack_chk_guard, ((char*)&__stack_chk_guard)+PAGE_SIZE, 0, 0);
 
     /* get the number of physical pages the system has. Used to check for
      * system memory. */
