@@ -186,7 +186,6 @@ struct chunk {
 static int
 chunklevel(struct chunk *ch)
 {
-	bmk_assert(ch->magic == __stack_chk_guard.v.heap_page_chk_guard);
 	return ch->level;
 }
 
@@ -449,6 +448,8 @@ bmk_pgfree(void *pointer, int order)
 		}
 	}
 #endif
+
+	bmk_assert(((struct chunk*)pointer)->magic == __stack_chk_guard.v.heap_page_chk_guard);
 
 	/* free the allocation in the bitmap */
 	map_free(pointer, 1UL << order);
