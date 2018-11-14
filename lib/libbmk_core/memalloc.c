@@ -149,9 +149,7 @@ bucketalloc(unsigned bucket)
 			return NULL;
 		}
 	} else {
-    if (LIST_REMOVE_CHECK(frb, entries)) {
-      bmk_platform_halt("Linked list validation failed!");
-    }
+    LIST_REMOVE_CHECK(frb, entries, bmk_assert);
     LIST_REMOVE(frb, entries);
 	}
 

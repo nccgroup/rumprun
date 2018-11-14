@@ -186,6 +186,7 @@ struct chunk {
 static int
 chunklevel(struct chunk *ch)
 {
+	bmk_assert(ch->magic == __stack_chk_guard.v.heap_page_chk_guard);
 	return ch->level;
 }
 
@@ -389,9 +390,7 @@ bmk_pgalloc_align(int order, unsigned long align)
 		return 0;
 	}
 	/* Unlink the chunk. */
-  if (LIST_REMOVE_CHECK(alloc_ch, entries)) {
-    bmk_platform_halt("Linked list validation failed!");
-  }
+  LIST_REMOVE_CHECK(alloc_ch, entries, bmk_assert);
   LIST_REMOVE(alloc_ch, entries);
 
 	bmk_assert(alloc_ch->magic == __stack_chk_guard.v.heap_page_chk_guard);
@@ -449,8 +448,6 @@ bmk_pgfree(void *pointer, int order)
 	}
 #endif
 
-	bmk_assert(((struct chunk*)pointer)->magic == __stack_chk_guard.v.heap_page_chk_guard);
-
 	/* free the allocation in the bitmap */
 	map_free(pointer, 1UL << order);
 	pgalloc_usedkb -= order2size(order)>>10;
@@ -481,9 +478,7 @@ bmk_pgfree(void *pointer, int order)
 
 		to_merge_ch->magic = ~__stack_chk_guard.v.heap_page_chk_guard;
 
-    if (LIST_REMOVE_CHECK(to_merge_ch, entries)) {
-      bmk_platform_halt("Linked list validation failed!");
-    }
+    LIST_REMOVE_CHECK(to_merge_ch, entries, bmk_assert);
     LIST_REMOVE(to_merge_ch, entries);
 
 		order++;

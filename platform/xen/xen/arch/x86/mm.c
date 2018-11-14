@@ -289,7 +289,7 @@ static void set_permissions(void *begin, void *end,
     int count = 0;
     int rc;
 
-    minios_printk("setting %p-%p permissions: R%s%s\n",
+    minios_printk("Setting %p-%p permissions: R%s%s\n",
         begin, end, perm_write ? "W" : "", perm_execute ? "X" : "");
 
     while ( start_address + PAGE_SIZE <= end_address )
@@ -338,7 +338,6 @@ static void set_permissions(void *begin, void *end,
         if ( count == L1_PAGETABLE_ENTRIES || 
              start_address + PAGE_SIZE >= end_address )
         {
-            minios_printk("count: %d\n", count);
             rc = HYPERVISOR_mmu_update(mmu_updates, count, NULL, DOMID_SELF);
             if ( rc < 0 )
             {
@@ -942,8 +941,6 @@ void arch_init_mm(unsigned long* start_pfn_p, unsigned long* max_pfn_p)
 
     minios_printk("  start_pfn: %lx\n", start_pfn);
     minios_printk("    max_pfn: %lx\n", max_pfn);
-    
-    minios_printk("    scg: %p\n", &__stack_chk_guard);
 
     build_pagetable(&start_pfn, &max_pfn);
     clear_bootstrap();
