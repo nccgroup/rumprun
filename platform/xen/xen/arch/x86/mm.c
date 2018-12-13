@@ -58,8 +58,6 @@
 static pgentry_t PAGE_NX = 0;
 unsigned long *_minios_phys_to_machine_mapping;
 unsigned long _minios_mfn_zero;
-extern char _minios_stack[];
-extern char *_minios_stack_end;
 extern void page_walk(unsigned long va);
 extern unsigned long __stack_chk_guard;
 
@@ -245,12 +243,13 @@ static void build_pagetable(unsigned long *start_pfn, unsigned long *max_pfn)
         tab = to_virt(mfn_to_pfn(pt_mfn) << PAGE_SHIFT);
         offset = l1_table_offset(start_address);
 
+        // Default to NX, RW
         if ( !(tab[offset] & _PAGE_PRESENT) )
         {
             mmu_updates[count].ptr =
                 ((pgentry_t)pt_mfn << PAGE_SHIFT) + sizeof(pgentry_t) * offset;
             mmu_updates[count].val =
-                (pgentry_t)pfn_to_mfn(pfn_to_map) << PAGE_SHIFT | L1_PROT;
+                (pgentry_t)pfn_to_mfn(pfn_to_map) << PAGE_SHIFT | L1_PROT | PAGE_NX;
             count++;
         }
         pfn_to_map++;
@@ -277,7 +276,7 @@ static void build_pagetable(unsigned long *start_pfn, unsigned long *max_pfn)
  */
 extern struct shared_info _minios_shared_info;
 static void set_permissions(void *begin, void *end,
-                            int perm_write, int perm_execute)
+                            int perm_write, int perm_execute, int present)
 {
     unsigned long start_address =
         ((unsigned long) begin + PAGE_SIZE - 1) & PAGE_MASK;
@@ -289,8 +288,9 @@ static void set_permissions(void *begin, void *end,
     int count = 0;
     int rc;
 
-    minios_printk("Setting %p-%p permissions: R%s%s\n",
-        begin, end, perm_write ? "W" : "", perm_execute ? "X" : "");
+    minios_printk("Setting %p-%p permissions: R%s%s %s\n",
+        begin, end, perm_write ? "W" : "", perm_execute ? "X" : "",
+        present ? "P" : "NP");
 
     while ( start_address + PAGE_SIZE <= end_address )
     {
@@ -326,6 +326,10 @@ static void set_permissions(void *begin, void *end,
 
             if (perm_execute) new_val &= ~PAGE_NX;
             else              new_val |= PAGE_NX;
+
+            // Present == -1 can skip modifying
+            if (present == 1)   new_val |= _PAGE_PRESENT;
+            else if (!present)  new_val &= ~_PAGE_PRESENT;
 
             mmu_updates[count].val = new_val;
             count++;
@@ -908,6 +912,7 @@ void arch_init_p2m(unsigned long max_pfn)
     HYPERVISOR_shared_info->arch.max_pfn = max_pfn;
 }
 
+extern char *_minios_stack;
 void arch_init_mm(unsigned long* start_pfn_p, unsigned long* max_pfn_p)
 {
     PAGE_NX = (cpu_supports_nx() ? _PAGE_NX : 0);
@@ -918,12 +923,15 @@ void arch_init_mm(unsigned long* start_pfn_p, unsigned long* max_pfn_p)
 
     unsigned long start_pfn, max_pfn;
 
-    minios_printk("      _text: %p(VA)\n", &_text);
-    minios_printk("     _etext: %p(VA)\n", &_etext);
-    minios_printk("   _erodata: %p(VA)\n", &_erodata);
-    minios_printk("     _edata: %p(VA)\n", &_edata);
-    minios_printk("stack start: %p(VA)\n", _minios_stack);
+    minios_printk("     text: %p-%p (VA)\n", &_text, &_etext);
+    minios_printk("   rodata: %p-%p (VA)\n", &_rodata, &_erodata);
+    minios_printk("     data: %p-%p (VA)\n", &_data, &_edata);
+    minios_printk("edata-ebss: %p-%p (VA)\n", &_edata, &_ebss);
+    minios_printk("    stack: %p-%p (VA)\n", &_stack, &_estack);
+    minios_printk("   guard1: %p-%p (VA)\n", &_guard1, &_eguard1);
     minios_printk("       _end: %p(VA)\n", &_end);
+
+    minios_printk("minios_stack: %p (VA)\n", &_minios_stack);
 
     /* First page follows page table pages and 3 more pages (store page etc) */
     start_pfn = PFN_UP(to_phys(start_info.pt_base)) + 
@@ -945,14 +953,14 @@ void arch_init_mm(unsigned long* start_pfn_p, unsigned long* max_pfn_p)
     build_pagetable(&start_pfn, &max_pfn);
     clear_bootstrap();
 
-    //              start               end                   write  execute
-    set_permissions(&_text,             &_etext,              0,     1);
-    set_permissions(&_etext,            &_erodata,            0,     0);
-    set_permissions(&_erodata,          &_edata,              1,     0);
-    set_permissions(&_edata,            _minios_stack,        1,     0);
-    set_permissions(_minios_stack,      _minios_stack_end,    1,     0);
-    set_permissions(_minios_stack_end,  &_end,                1,     0);
-    set_permissions(&__stack_chk_guard, ((char*)&__stack_chk_guard)+PAGE_SIZE, 0, 0);
+    //              start               end                   write exec pres
+    set_permissions(&_text,             &_etext,              0,    1,   -1);
+    set_permissions(&_rodata,           &_erodata,            0,    0,   -1);
+    set_permissions(&_data,             &_ebss,               1,    0,   -1);
+    set_permissions(&_stack,            &_estack,             1,    0,   -1);
+    set_permissions(&_guard1,           &_eguard1,            1,    0,    0);
+    set_permissions(&_eguard1,          &_end,                1,    0,   -1);
+    set_permissions(&__stack_chk_guard, ((char*)&__stack_chk_guard)+PAGE_SIZE, 0, 0, -1);
 
     /* get the number of physical pages the system has. Used to check for
      * system memory. */

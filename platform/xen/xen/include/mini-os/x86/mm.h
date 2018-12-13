@@ -159,7 +159,8 @@ typedef unsigned long maddr_t;
 #endif
 
 extern unsigned long *_minios_phys_to_machine_mapping;
-extern char _text, _etext, _erodata, _edata, _end;
+extern char _text, _etext, _rodata, _erodata, _data, _edata, _stack, _estack,
+       _guard1, _eguard1, _ebss, _end;
 extern unsigned long _minios_mfn_zero;
 #define pfn_to_mfn(_pfn) (_minios_phys_to_machine_mapping[(_pfn)])
 static __inline__ maddr_t phys_to_machine(paddr_t phys)
