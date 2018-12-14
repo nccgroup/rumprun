@@ -30,6 +30,7 @@
  */
 
 #include <sys/cdefs.h>
+#include <sys/xen.h>
 
 #include <sys/param.h>
 #include <sys/errno.h>
@@ -113,6 +114,20 @@ mmapmem_free(void *addr, size_t roundedlen)
 	return 0;
 }
 
+inline void
+do_mprotect(void *addr, size_t len, int prot)
+{
+  // Symbols in platform/xen/xen/x86/mm.c aren't directly visible here,
+  // so we have to get the function pointer through an intermediary
+  // after mm.c sets it.
+  struct xen_cb const * xcb = sys_xen_cb_get();
+  if (xcb->set_permissions)
+    xcb->set_permissions(addr, (uint8_t*)addr+len,
+        prot & PROT_WRITE, prot & PROT_EXEC, !(prot & PROT_NONE));
+  else
+    printf("do_mprotect (sys_mman.c): missing xcb\n");
+}
+
 int
 sys_mmap(struct lwp *l, const struct sys_mmap_args *uap, register_t *retval)
 {
@@ -155,6 +170,7 @@ sys_mmap(struct lwp *l, const struct sys_mmap_args *uap, register_t *retval)
 
 	if (flags & MAP_ANON) {
 		memset(v, 0, roundedlen);
+    do_mprotect(v, roundedlen, prot);
 		return 0;
 	}
 
@@ -189,10 +205,26 @@ sys_mmap(struct lwp *l, const struct sys_mmap_args *uap, register_t *retval)
 	if ((size_t)cnt != roundedlen) {
 		KASSERT(cnt < roundedlen);
 		memset((uint8_t *)v+cnt, 0, roundedlen-cnt);
-	}
+    do_mprotect((uint8_t*)v+cnt, roundedlen-cnt, prot);
+  } else {
+    do_mprotect(v, roundedlen, prot);
+  }
 
 	MMAP_PRINTF(("<- mmap: %p %d\n", v, error));
 	return error;
+}
+
+int
+sys_mprotect(struct lwp *l, const struct sys_mprotect_args *uap, register_t *retval)
+{
+
+  void *addr = SCARG(uap, addr);
+	size_t len = SCARG(uap, len);
+	int prot = SCARG(uap, prot);
+
+  do_mprotect(addr, len, prot);
+
+  return 0;
 }
 
 int
@@ -262,7 +294,7 @@ sys_madvise(struct lwp *l, const struct sys_madvise_args *uap,
 	return 0;
 }
 
-__strong_alias(sys_mprotect,sys_madvise);
+//__strong_alias(sys_mprotect,sys_madvise);
 __strong_alias(sys_minherit,sys_madvise);
 __strong_alias(sys_mlock,sys_madvise);
 __strong_alias(sys_mlockall,sys_madvise);

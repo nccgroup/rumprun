@@ -41,6 +41,7 @@
 #include <mini-os/lib.h>
 #include <xen/memory.h>
 
+#include <bmk-core/memalloc.h>
 #include <bmk-core/pgalloc.h>
 #include <bmk-core/string.h>
 
@@ -288,9 +289,11 @@ static void set_permissions(void *begin, void *end,
     int count = 0;
     int rc;
 
+    /*
     minios_printk("Setting %p-%p permissions: R%s%s %s\n",
         begin, end, perm_write ? "W" : "", perm_execute ? "X" : "",
         present ? "P" : "NP");
+        */
 
     while ( start_address + PAGE_SIZE <= end_address )
     {
@@ -335,7 +338,7 @@ static void set_permissions(void *begin, void *end,
             count++;
         }
         else
-            minios_printk("skipped %p\n", start_address);
+            minios_printk("  Skipped %p\n", start_address);
 
         start_address += PAGE_SIZE;
 
@@ -345,7 +348,7 @@ static void set_permissions(void *begin, void *end,
             rc = HYPERVISOR_mmu_update(mmu_updates, count, NULL, DOMID_SELF);
             if ( rc < 0 )
             {
-                minios_printk("ERROR: set_readonly(): PTE could not be updated\n");
+                minios_printk("ERROR: set_permissions(): PTE could not be updated\n");
                 minios_do_exit();
             }
             count = 0;
@@ -915,6 +918,12 @@ void arch_init_p2m(unsigned long max_pfn)
 extern char *_minios_stack;
 void arch_init_mm(unsigned long* start_pfn_p, unsigned long* max_pfn_p)
 {
+    struct bmk_xen_cb xen_funcs = {
+      .set_permissions = &set_permissions
+    };
+
+    bmk_xen_cb_init(&xen_funcs);
+
     PAGE_NX = (cpu_supports_nx() ? _PAGE_NX : 0);
     if (PAGE_NX)
       minios_printk("  NX bit supported\n");

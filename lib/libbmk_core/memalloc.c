@@ -54,6 +54,8 @@
 
 #include "stack_chk_guard.h"
 
+#include <sys/xen.h>
+
 /*
  * Header goes right before the allocated space and holds
  * information about the allocation.  Notably, we support
@@ -91,6 +93,14 @@ static unsigned nmalloc[LOCALBUCKETS];
 /* not multicore */
 #define malloc_lock()
 #define malloc_unlock()
+
+void	bmk_xen_cb_init(struct bmk_xen_cb * const cb) {
+  sys_xen_cb_init((struct xen_cb*)cb);
+}
+
+struct bmk_xen_cb const * bmk_xen_cb_get(void) {
+  return (struct bmk_xen_cb*)sys_xen_cb_get();
+}
 
 static void *
 morecore(int bucket)

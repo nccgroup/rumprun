@@ -32,6 +32,7 @@
 #define mmap _mmap
 
 #include <sys/cdefs.h>
+#include <sys/xen.h>
 
 #include <sys/param.h>
 #include <sys/mman.h>
@@ -40,6 +41,7 @@
 
 #include <errno.h>
 #include <string.h>
+#include <stdio.h>
 
 /* XXX */
 int	rump_syscall(int, void *, size_t, register_t *);
@@ -49,6 +51,23 @@ int	rump_syscall(int, void *, size_t, register_t *);
 #else /* LITTLE_ENDIAN, I hope dearly */
 #define SPARG(p,k)      ((p)->k.le.datum)
 #endif
+
+struct xen_cb xen_funcs;
+
+void sys_xen_cb_init(struct xen_cb *xcb)
+{
+  xen_funcs.set_permissions = xcb->set_permissions;
+}
+
+struct xen_cb const * sys_xen_cb_get(void)
+{
+  return &xen_funcs;
+}
+
+struct xen_cb const * rumpns_sys_xen_cb_get(void)
+{
+  return &xen_funcs;
+}
 
 void *
 mmap(void *addr, size_t len, int prot, int flags, int fd, off_t pos)
@@ -68,6 +87,7 @@ mmap(void *addr, size_t len, int prot, int flags, int fd, off_t pos)
 	error = rump_syscall(SYS_mmap, &callarg, sizeof(callarg), retval);
 	errno = error;
 	if (error == 0) {
+    mprotect((void *)retval[0], len, prot);
 		return (void *)retval[0];
 	}
 	return MAP_FAILED;
@@ -136,6 +156,22 @@ mincore(void *addr, size_t len, char *vec)
 	return -1;
 }
 
+int
+mprotect(void *addr, size_t len, int prot)
+{
+  // Symbols in platform/xen/xen/x86/mm.c aren't directly visible here,
+  // so we have to get the function pointer through an intermediary
+  // after mm.c sets it.
+  struct xen_cb const * xcb = sys_xen_cb_get();
+  if (xcb->set_permissions)
+    xcb->set_permissions(addr, (uint8_t*)addr+len,
+        prot & PROT_WRITE, prot & PROT_EXEC, !(prot & PROT_NONE));
+  else
+    printf("mprotect (syscall_mman.c): missing xcb\n");
+
+  return 0;
+}
+
 /*
  * We "know" that the following are stubs also in the kernel.  Risk of
  * them going out-of-sync is quite minimal ...
@@ -147,7 +183,7 @@ madvise(void *addr, size_t len, int adv)
 
 	return 0;
 }
-__strong_alias(mprotect,madvise);
+//__strong_alias(mprotect,madvise);
 __strong_alias(minherit,madvise);
 __strong_alias(mlock,madvise);
 __strong_alias(mlockall,madvise);
