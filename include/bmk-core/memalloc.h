@@ -68,6 +68,12 @@ enum bmk_memwho {
 	BMK_MEMWHO_USER
 };
 
+struct bmk_xen_cb {
+  void (*set_permissions)(void*, void*, int, int, int);
+};
+
+void	bmk_xen_cb_init(struct bmk_xen_cb*);
+struct bmk_xen_cb const * bmk_xen_cb_get(void);
 void	bmk_memalloc_init(void);
 
 void *  bmk_memalloc(unsigned long, unsigned long, enum bmk_memwho);

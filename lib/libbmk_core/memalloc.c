@@ -41,6 +41,8 @@
  * Modified for bmk by Antti Kantee over 30 years later.
  */
 
+#include <sys/xen.h>
+
 #include <bmk-core/core.h>
 #include <bmk-core/null.h>
 #include <bmk-core/string.h>
@@ -89,6 +91,14 @@ static unsigned nmalloc[LOCALBUCKETS];
 /* not multicore */
 #define malloc_lock()
 #define malloc_unlock()
+
+void	bmk_xen_cb_init(struct bmk_xen_cb * const cb) {
+	sys_xen_cb_init((struct xen_cb*)cb);
+}
+
+struct bmk_xen_cb const * bmk_xen_cb_get(void) {
+	return (struct bmk_xen_cb*)sys_xen_cb_get();
+}
 
 static void *
 morecore(int bucket)
