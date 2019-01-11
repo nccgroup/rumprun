@@ -69,6 +69,8 @@
 
 #include <bmk-pcpu/pcpu.h>
 
+#include "stack_chk_guard.h"
+
 #ifndef BMK_PGALLOC_DEBUG
 #define DPRINTF(x)
 #define SANITY_CHECK()
@@ -174,10 +176,9 @@ map_free(void *virt, unsigned long nr_pages)
  * BINARY BUDDY ALLOCATOR
  */
 
-#define CHUNKMAGIC 0x11020217
 struct chunk {
+	unsigned long magic;
 	int level;
-	int magic;
 
 	LIST_ENTRY(chunk) entries;
 };
@@ -185,8 +186,7 @@ struct chunk {
 static int
 chunklevel(struct chunk *ch)
 {
-
-	bmk_assert(ch->magic == CHUNKMAGIC);
+	bmk_assert(ch->magic == __stack_chk_guard.v.heap_page_chk_guard);
 	return ch->level;
 }
 
@@ -207,7 +207,7 @@ freechunk_link(void *addr, int order)
 	struct chunk *ch = addr;
 
 	ch->level = order;
-	ch->magic = CHUNKMAGIC;
+	ch->magic = __stack_chk_guard.v.heap_page_chk_guard;
 
 	LIST_INSERT_HEAD(&freelist[order], ch, entries);
 }
@@ -237,7 +237,7 @@ sanity_check(void)
 	for (x = 0; x < FREELIST_LEVELS; x++) {
 		LIST_FOREACH(head, &freelist[x], entries) {
 			bmk_assert(!allocated_in_map(head));
-			bmk_assert(head->magic == CHUNKMAGIC);
+			bmk_assert(head->magic == __stack_chk_guard.v.heap_page_chk_guard);
 		}
 	}
 }
@@ -393,8 +393,8 @@ bmk_pgalloc_align(int order, unsigned long align)
 	LIST_REMOVE_CHECK(alloc_ch, entries, bmk_assert);
 	LIST_REMOVE(alloc_ch, entries);
 
-	bmk_assert(alloc_ch->magic == CHUNKMAGIC);
-	alloc_ch->magic = 0;
+	bmk_assert(alloc_ch->magic == __stack_chk_guard.v.heap_page_chk_guard);
+	alloc_ch->magic = ~__stack_chk_guard.v.heap_page_chk_guard;
 
 	/*
 	 * TODO: figure out if we can cheaply carve the block without
@@ -461,7 +461,7 @@ bmk_pgfree(void *pointer, int order)
 			    || allocated_in_map(to_merge_ch)
 			    || chunklevel(to_merge_ch) != order)
 				break;
-			freed_ch->magic = 0;
+			freed_ch->magic = ~__stack_chk_guard.v.heap_page_chk_guard;
 
 			/* merge with predecessor, point freed chuck there */
 			freed_ch = to_merge_ch;
@@ -471,12 +471,12 @@ bmk_pgfree(void *pointer, int order)
 			    || allocated_in_map(to_merge_ch)
 			    || chunklevel(to_merge_ch) != order)
 				break;
-			freed_ch->magic = 0;
+			freed_ch->magic = ~__stack_chk_guard.v.heap_page_chk_guard;
 
 			/* merge with successor, freed chuck already correct */
 		}
 
-		to_merge_ch->magic = 0;
+		to_merge_ch->magic = ~__stack_chk_guard.v.heap_page_chk_guard;
 
 		LIST_REMOVE_CHECK(to_merge_ch, entries, bmk_assert);
 		LIST_REMOVE(to_merge_ch, entries);

@@ -52,6 +52,8 @@
 
 #include <bmk-pcpu/pcpu.h>
 
+#include "stack_chk_guard.h"
+
 /*
  * Header goes right before the allocated space and holds
  * information about the allocation.  Notably, we support
@@ -59,19 +61,19 @@
  * allocator than malloc.
  */
 struct memalloc_hdr {
+	uint64_t mh_magic;	/* magic number --- MUST BE LOCATED AT THE TOP */
 	uint32_t	mh_alignpad;	/* padding for alignment */
-	uint16_t	mh_magic;	/* magic number */
 	uint8_t		mh_index;	/* bucket # */
 	uint8_t		mh_who;		/* who allocated */
 };
-bmk_ctassert(sizeof(struct memalloc_hdr) == 8);
+// TODO: is this OK?
+//bmk_ctassert(sizeof(struct memalloc_hdr) == 8);
 
 struct memalloc_freeblk {
 	LIST_ENTRY(memalloc_freeblk) entries;
 };
 LIST_HEAD(freebucket, memalloc_freeblk);
 
-#define	MAGIC		0xef		/* magic # on accounting info */
 #define UNMAGIC		0x1221		/* magic # != MAGIC */
 #define UNMAGIC2	0x2442		/* magic # != MAGIC/UNMAGIC */
 
@@ -207,7 +209,7 @@ bmk_memalloc(unsigned long nbytes, unsigned long align, enum bmk_memwho who)
 #endif
 
 	hdr = ((struct memalloc_hdr *)rv)-1;
-	hdr->mh_magic = MAGIC;
+	hdr->mh_magic = __stack_chk_guard.v.heap_chunk_chk_guard;
 	hdr->mh_index = bucket;
 	hdr->mh_alignpad = alignpad;
 	hdr->mh_who = who;
@@ -253,11 +255,12 @@ bmk_memfree(void *cp, enum bmk_memwho who)
   	if (cp == NULL)
   		return;
 	hdr = ((struct memalloc_hdr *)cp)-1;
-	if (hdr->mh_magic != MAGIC) {
+	if (hdr->mh_magic != __stack_chk_guard.v.heap_chunk_chk_guard) {
 #ifdef MEMALLOC_TESTING
 		bmk_assert(0);
 #else
 		bmk_printf("bmk_memfree: invalid pointer %p\n", cp);
+		bmk_platform_halt("bmk_memalloc error");
 		return;
 #endif
 	}
