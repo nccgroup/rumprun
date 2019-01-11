@@ -390,6 +390,7 @@ bmk_pgalloc_align(int order, unsigned long align)
 		return 0;
 	}
 	/* Unlink the chunk. */
+	LIST_REMOVE_CHECK(alloc_ch, entries, bmk_assert);
 	LIST_REMOVE(alloc_ch, entries);
 
 	bmk_assert(alloc_ch->magic == CHUNKMAGIC);
@@ -476,6 +477,8 @@ bmk_pgfree(void *pointer, int order)
 		}
 
 		to_merge_ch->magic = 0;
+
+		LIST_REMOVE_CHECK(to_merge_ch, entries, bmk_assert);
 		LIST_REMOVE(to_merge_ch, entries);
 
 		order++;

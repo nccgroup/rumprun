@@ -267,6 +267,15 @@ struct {								\
 	(elm)->field.le_prev = &(head)->lh_first;			\
 } while (/*CONSTCOND*/0)
 
+#define LIST_REMOVE_CHECK(elm, field, assert) \
+do { \
+  assert(elm); \
+  assert(!(elm)->field.le_next || \
+      (*((elm)->field.le_next->field.le_prev) == (elm)->field.le_next)); \
+  assert(!(elm)->field.le_prev || \
+      ((*(elm)->field.le_prev)->field.le_next == (elm)->field.le_next)); \
+} while (/*CONSTCOND*/0);
+
 #define	LIST_REMOVE(elm, field) do {					\
 	QUEUEDEBUG_LIST_OP((elm), field)				\
 	if ((elm)->field.le_next != NULL)				\

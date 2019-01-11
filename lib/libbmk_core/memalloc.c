@@ -147,6 +147,7 @@ bucketalloc(unsigned bucket)
 			return NULL;
 		}
 	} else {
+		LIST_REMOVE_CHECK(frb, entries, bmk_assert);
 		LIST_REMOVE(frb, entries);
 	}
 
