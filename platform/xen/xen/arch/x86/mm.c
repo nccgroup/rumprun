@@ -973,6 +973,7 @@ void arch_init_mm(unsigned long* start_pfn_p, unsigned long* max_pfn_p)
     set_permissions(&_stack,            &_estack,             1,    0,   -1);
     set_permissions(&_guard1,           &_eguard1,            1,    0,    0);
     set_permissions(&_eguard1,          &_end,                1,    0,   -1);
+    set_permissions(&__stack_chk_guard, ((char*)&__stack_chk_guard)+PAGE_SIZE, 0, 0, -1);
 
     /* get the number of physical pages the system has. Used to check for
      * system memory. */
