@@ -136,6 +136,11 @@ static void new_pt_frame(unsigned long *pt_pfn, unsigned long prev_l_mfn,
         break;
     }
 
+    // PTEs default to NX + ~RW
+    prot_e = (prot_e | PAGE_NX) & ~_PAGE_RW;
+    // Directories default to NX
+    prot_t |= PAGE_NX;
+
     /* Make PFN a page table page */
 #if defined(__x86_64__)
     tab = pte_to_virt(tab[l4_table_offset(pt_page)]);
@@ -144,8 +149,10 @@ static void new_pt_frame(unsigned long *pt_pfn, unsigned long prev_l_mfn,
 
     mmu_updates[0].ptr = (tab[l2_table_offset(pt_page)] & PAGE_MASK) + 
         sizeof(pgentry_t) * l1_table_offset(pt_page);
-    mmu_updates[0].val = (pgentry_t)pfn_to_mfn(*pt_pfn) << PAGE_SHIFT | 
-        (prot_e & ~_PAGE_RW);
+
+
+    mmu_updates[0].val = (pgentry_t)pfn_to_mfn(*pt_pfn) << PAGE_SHIFT; 
+    mmu_updates[0].val |= prot_e;
     
     if ( (rc = HYPERVISOR_mmu_update(mmu_updates, 1, NULL, DOMID_SELF)) < 0 )
     {
@@ -237,12 +244,13 @@ static void build_pagetable(unsigned long *start_pfn, unsigned long *max_pfn)
         tab = to_virt(mfn_to_pfn(pt_mfn) << PAGE_SHIFT);
         offset = l1_table_offset(start_address);
 
+        // Default to NX, RW
         if ( !(tab[offset] & _PAGE_PRESENT) )
         {
             mmu_updates[count].ptr =
                 ((pgentry_t)pt_mfn << PAGE_SHIFT) + sizeof(pgentry_t) * offset;
             mmu_updates[count].val =
-                (pgentry_t)pfn_to_mfn(pfn_to_map) << PAGE_SHIFT | L1_PROT;
+                (pgentry_t)pfn_to_mfn(pfn_to_map) << PAGE_SHIFT | L1_PROT | PAGE_NX;
             count++;
         }
         pfn_to_map++;
