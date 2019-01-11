@@ -46,7 +46,8 @@ union start_info_union _minios_start_info_union;
  * Just allocate the kernel stack here. SS:ESP is set up to point here
  * in head.S.
  */
-char _minios_stack[2*STACK_SIZE];
+char __guard1[PAGE_SIZE] __attribute__ ((section (".guard1")));
+char _minios_stack[2*STACK_SIZE] __attribute__ ((section (".stack")));
 
 extern char _minios_shared_info[PAGE_SIZE];
 

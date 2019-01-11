@@ -11,7 +11,10 @@ SECTIONS
 	*(.gnu.warning)
 	} = 0x9090
 
+  . = ALIGN(0x1000);
+
   _etext = .;			/* End of text section */
+  _rodata = .;
 
   .rodata : {
           *(.rodata)
@@ -31,8 +34,9 @@ SECTIONS
           __fini_array_end = . ;
 	  }
 
-  . = ALIGN(4096);
+  . = ALIGN(0x1000);
   _erodata = .;
+  _data = .;
 
   .data : {			/* Data */
 	*(.data)
@@ -57,6 +61,24 @@ SECTIONS
 	*(.bss)
 	*(.bss.*)
 	}
+
+  _ebss = .;
+
+  . = ALIGN(0x1000);
+
+  .stack : {
+    _stack = .;
+    *(.stack)
+    . = ALIGN(0x1000);
+    _estack = .;
+  }
+
+  .guard1 : {
+    _guard1 = .;
+    *(.guard1)
+    _eguard1 = .;
+  }
+
   _end = . ;
 
   /* Sections to be discarded */
