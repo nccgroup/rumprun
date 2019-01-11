@@ -913,6 +913,12 @@ void arch_init_p2m(unsigned long max_pfn)
 
 void arch_init_mm(unsigned long* start_pfn_p, unsigned long* max_pfn_p)
 {
+    struct bmk_xen_cb xen_funcs = {
+      .set_permissions = &set_permissions
+    };
+
+    bmk_xen_cb_init(&xen_funcs);
+
     PAGE_NX = (cpu_supports_nx() ? _PAGE_NX : 0);
     if (PAGE_NX)
       minios_printk("  NX bit supported\n");
