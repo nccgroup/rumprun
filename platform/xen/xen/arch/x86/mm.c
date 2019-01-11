@@ -41,8 +41,13 @@
 #include <mini-os/lib.h>
 #include <xen/memory.h>
 
+#include <bmk-core/memalloc.h>
 #include <bmk-core/pgalloc.h>
 #include <bmk-core/string.h>
+
+#define _PAGE_NX (1ULL << 63)
+#define CPUID_NX (1ULL << 20)
+#define CPUID_MODE_EXTENDED_FEATURES 0x80000001
 
 #ifdef MM_DEBUG
 #define DEBUG(_f, _a...) \
@@ -51,10 +56,40 @@
 #define DEBUG(_f, _a...)    ((void)0)
 #endif
 
+static pgentry_t PAGE_NX = 0;
 unsigned long *_minios_phys_to_machine_mapping;
 unsigned long _minios_mfn_zero;
-extern char _minios_stack[];
 extern void page_walk(unsigned long va);
+extern unsigned long __stack_chk_guard;
+
+static inline void native_cpuid(unsigned *eax, unsigned *ebx,
+                                unsigned *ecx, unsigned *edx)
+{
+  /* ecx is often an input as well as an output. */
+  asm volatile("cpuid"
+      : "=a" (*eax),
+        "=b" (*ebx),
+        "=c" (*ecx),
+        "=d" (*edx)
+      : "a" (*eax),
+        "c" (*ecx));
+}
+
+static int cpu_supports_nx(void) {
+  unsigned eax, ebx, ecx, edx;
+
+  eax = 0; ecx = 0;
+  native_cpuid(&eax, &ebx, &ecx, &edx);
+
+  const unsigned max_eax = eax;
+
+  if (max_eax < CPUID_MODE_EXTENDED_FEATURES)
+    return 1;
+
+  eax = CPUID_MODE_EXTENDED_FEATURES; ecx = 0;
+  native_cpuid(&eax, &ebx, &ecx, &edx);
+  return (edx & CPUID_NX);
+}
 
 /*
  * Make pt_pfn a new 'level' page table frame and hook it into the page
@@ -233,11 +268,12 @@ static void build_pagetable(unsigned long *start_pfn, unsigned long *max_pfn)
  * Mark portion of the address space read only.
  */
 extern struct shared_info _minios_shared_info;
-static void set_readonly(void *text, void *etext)
+static void set_permissions(void *begin, void *end,
+                            int perm_write, int perm_execute, int present)
 {
     unsigned long start_address =
-        ((unsigned long) text + PAGE_SIZE - 1) & PAGE_MASK;
-    unsigned long end_address = (unsigned long) etext;
+        ((unsigned long) begin + PAGE_SIZE - 1) & PAGE_MASK;
+    unsigned long end_address = (unsigned long) end;
     static mmu_update_t mmu_updates[L1_PAGETABLE_ENTRIES + 1];
     pgentry_t *tab = (pgentry_t *)start_info.pt_base, page;
     unsigned long mfn = pfn_to_mfn(virt_to_pfn(start_info.pt_base));
@@ -245,7 +281,11 @@ static void set_readonly(void *text, void *etext)
     int count = 0;
     int rc;
 
-    minios_printk("setting %p-%p readonly\n", text, etext);
+    /*
+    minios_printk("Setting %p-%p permissions: R%s%s %s\n",
+        begin, end, perm_write ? "W" : "", perm_execute ? "X" : "",
+        present ? "P" : "NP");
+        */
 
     while ( start_address + PAGE_SIZE <= end_address )
     {
@@ -273,21 +313,34 @@ static void set_readonly(void *text, void *etext)
         {
             mmu_updates[count].ptr = 
                 ((pgentry_t)mfn << PAGE_SHIFT) + sizeof(pgentry_t) * offset;
-            mmu_updates[count].val = tab[offset] & ~_PAGE_RW;
+
+            pgentry_t new_val = tab[offset];
+              
+            if (perm_write) new_val |= _PAGE_RW;
+            else            new_val &= ~_PAGE_RW;
+
+            if (perm_execute) new_val &= ~PAGE_NX;
+            else              new_val |= PAGE_NX;
+
+            // Present == -1 can skip modifying
+            if (present == 1)   new_val |= _PAGE_PRESENT;
+            else if (!present)  new_val &= ~_PAGE_PRESENT;
+
+            mmu_updates[count].val = new_val;
             count++;
         }
         else
-            minios_printk("skipped %p\n", start_address);
+            minios_printk("  Skipped %p\n", start_address);
 
         start_address += PAGE_SIZE;
 
         if ( count == L1_PAGETABLE_ENTRIES || 
-             start_address + PAGE_SIZE > end_address )
+             start_address + PAGE_SIZE >= end_address )
         {
             rc = HYPERVISOR_mmu_update(mmu_updates, count, NULL, DOMID_SELF);
             if ( rc < 0 )
             {
-                minios_printk("ERROR: set_readonly(): PTE could not be updated\n");
+                minios_printk("ERROR: set_permissions(): PTE could not be updated\n");
                 minios_do_exit();
             }
             count = 0;
@@ -301,6 +354,10 @@ static void set_readonly(void *text, void *etext)
         int count;
         HYPERVISOR_mmuext_op(&op, 1, &count, DOMID_SELF);
     }
+}
+
+static void set_readonly(void *begin, void *end) {
+  set_permissions(begin, end, 0, 1, -1);
 }
 
 /*
@@ -856,6 +913,12 @@ void arch_init_p2m(unsigned long max_pfn)
 
 void arch_init_mm(unsigned long* start_pfn_p, unsigned long* max_pfn_p)
 {
+    PAGE_NX = (cpu_supports_nx() ? _PAGE_NX : 0);
+    if (PAGE_NX)
+      minios_printk("  NX bit supported\n");
+    else
+      minios_printk("  WARNING: NX bit not supported\n");
+
     unsigned long start_pfn, max_pfn;
 
     minios_printk("      _text: %p(VA)\n", &_text);
