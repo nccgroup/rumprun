@@ -1,6 +1,6 @@
 [submodule "buildrump.sh"]
 	path = buildrump.sh
-  url = https://github.com/rumpkernel/buildrump.sh
+  url = git@github.com:nccgroup/buildrump.sh.git
 [submodule "src-netbsd"]
 	path = src-netbsd
   url = git@github.com:nccgroup/src-netbsd.git
