@@ -919,6 +919,7 @@ void arch_init_p2m(unsigned long max_pfn)
     HYPERVISOR_shared_info->arch.max_pfn = max_pfn;
 }
 
+extern char *_minios_stack;
 void arch_init_mm(unsigned long* start_pfn_p, unsigned long* max_pfn_p)
 {
     struct bmk_xen_cb xen_funcs = {
@@ -935,12 +936,15 @@ void arch_init_mm(unsigned long* start_pfn_p, unsigned long* max_pfn_p)
 
     unsigned long start_pfn, max_pfn;
 
-    minios_printk("      _text: %p(VA)\n", &_text);
-    minios_printk("     _etext: %p(VA)\n", &_etext);
-    minios_printk("   _erodata: %p(VA)\n", &_erodata);
-    minios_printk("     _edata: %p(VA)\n", &_edata);
-    minios_printk("stack start: %p(VA)\n", _minios_stack);
+    minios_printk("     text: %p-%p (VA)\n", &_text, &_etext);
+    minios_printk("   rodata: %p-%p (VA)\n", &_rodata, &_erodata);
+    minios_printk("     data: %p-%p (VA)\n", &_data, &_edata);
+    minios_printk("edata-ebss: %p-%p (VA)\n", &_edata, &_ebss);
+    minios_printk("    stack: %p-%p (VA)\n", &_stack, &_estack);
+    minios_printk("   guard1: %p-%p (VA)\n", &_guard1, &_eguard1);
     minios_printk("       _end: %p(VA)\n", &_end);
+
+    minios_printk("minios_stack: %p (VA)\n", &_minios_stack);
 
     /* First page follows page table pages and 3 more pages (store page etc) */
     start_pfn = PFN_UP(to_phys(start_info.pt_base)) + 
@@ -961,7 +965,14 @@ void arch_init_mm(unsigned long* start_pfn_p, unsigned long* max_pfn_p)
 
     build_pagetable(&start_pfn, &max_pfn);
     clear_bootstrap();
-    set_readonly(&_text, &_erodata);
+
+    //              start               end                   write exec pres
+    set_permissions(&_text,             &_etext,              0,    1,   -1);
+    set_permissions(&_rodata,           &_erodata,            0,    0,   -1);
+    set_permissions(&_data,             &_ebss,               1,    0,   -1);
+    set_permissions(&_stack,            &_estack,             1,    0,   -1);
+    set_permissions(&_guard1,           &_eguard1,            1,    0,    0);
+    set_permissions(&_eguard1,          &_end,                1,    0,   -1);
 
     /* get the number of physical pages the system has. Used to check for
      * system memory. */
